@@ -48,7 +48,27 @@ CLIENT (browser / Flutter)                   SERVER (Flask)
 ```bash
 cd backend
 pip install -r requirements.txt   # flask, flask-cors, cryptography
-python app.py
+USE_SQLITE_FALLBACK=true CELERY_ASYNC_ENABLED=false python app.py
+```
+```
+# 1. Kill port
+lsof -i :8080
+kill -9 <PID>
+
+# 2. Start backend
+USE_SQLITE_FALLBACK=true CELERY_ASYNC_ENABLED=false python app.py
+
+# 3. In NEW terminal
+source venv/bin/activate
+
+# 4. Get token
+curl -X POST http://localhost:8080/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"uid","email":"u@org.com","role":"trainer","attributes":{"dp_clearance":true}}'
+
+# 5. Use token
+curl -H "Authorization: Bearer <access_token>" \
+http://localhost:8080/api/experiments
 ```
 
 Server console output:
@@ -75,6 +95,15 @@ Visit **http://localhost:8080** — the encryption banner will show
 cd flutter_app
 flutter pub get
 flutter run
+```
+
+```
+cd flutter_app
+
+flutter config --enable-web
+flutter create .
+
+flutter run -d chrome
 ```
 
 The upload screen shows:
@@ -129,3 +158,29 @@ The upload screen shows:
 |-------------|-----|
 | Android Emulator | `http://10.0.2.2:8080` |
 | Physical Device | `http://[PC_LAN_IP]:8080` |
+
+
+cat << 'EOF' > start_all.sh
+#!/bin/bash
+echo "🚀 Starting Federated Learning System..."
+
+# 1. Kill anything on 8080
+echo "🧹 Cleaning up port 8080..."
+fuser -k 8080/tcp 2>/dev/null
+
+# 2. Start Backend in background
+echo "📡 Starting Backend..."
+cd backend
+USE_SQLITE_FALLBACK=true CELERY_ASYNC_ENABLED=false python3 app.py > backend.log 2>&1 &
+BACKEND_PID=$!
+cd ..
+
+# 3. Start Flutter
+echo "📱 Starting Flutter Web..."
+cd flutter_app
+flutter run -d chrome
+
+
+cd /home/tiger/Desktop/FL-PROJECT/FL_FINAL/tm_e2e
+./start_all.sh
+

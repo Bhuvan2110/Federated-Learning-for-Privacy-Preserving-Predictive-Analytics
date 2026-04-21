@@ -80,7 +80,7 @@ if _ASYNC_ENABLED:
     try:
         # Check if the broker is reachable
         with celery.connection_for_write().establish_connection() as conn:
-            conn.ensure_connection(timeout=1.0)
+            conn.ensure_connection(timeout=2.0)
         logger.info("✅ Celery broker connected — async mode active.")
     except Exception as e:
         logger.warning(f"⚠️  Celery broker unreachable ({e}) — falling back to synchronous mode.")
@@ -340,25 +340,29 @@ def api_train_central():
 
         # ── Async path ────────────────────────────────────────────────────
         if _ASYNC_ENABLED:
-            from tasks.training_tasks import run_central_training
-            task = run_central_training.apply_async(
-                kwargs=dict(
-                    experiment_id=exp_id,
-                    rows=d["rows"],
-                    headers=d["headers"],
-                    target_col_index=target_idx,
-                    feature_types=feature_types,
-                    epochs=epochs,
-                    lr=lr,
-                ),
-            )
-            logger.info("Submitted central training task %s  exp=%s", task.id, exp_id)
-            return jsonify({
-                "jobId":        task.id,
-                "experimentId": exp_id,
-                "status":       "PENDING",
-                "message":      "Training job submitted. Poll GET /api/jobs/<jobId> for status.",
-            }), 202
+            try:
+                from tasks.training_tasks import run_central_training
+                task = run_central_training.apply_async(
+                    kwargs=dict(
+                        experiment_id=exp_id,
+                        rows=d["rows"],
+                        headers=d["headers"],
+                        target_col_index=target_idx,
+                        feature_types=feature_types,
+                        epochs=epochs,
+                        lr=lr,
+                    ),
+                )
+                logger.info("Submitted central training task %s  exp=%s", task.id, exp_id)
+                return jsonify({
+                    "jobId":        task.id,
+                    "experimentId": exp_id,
+                    "status":       "PENDING",
+                    "message":      "Training job submitted. Poll GET /api/jobs/<jobId> for status.",
+                }), 202
+            except Exception as async_exc:
+                logger.error(f"Async submission failed: {async_exc}. Falling back to sync.")
+                # We don't return here, we fall through to the sync path
 
         # ── Sync fallback ─────────────────────────────────────────────────
         logger.info("Async disabled — running central training synchronously")
@@ -416,28 +420,32 @@ def api_train_federated():
         except Exception as db_exc:
             logger.warning("DB create experiment failed: %s", db_exc)
 
+        # ── Async path ────────────────────────────────────────────────────
         if _ASYNC_ENABLED:
-            from tasks.training_tasks import run_federated_training
-            task = run_federated_training.apply_async(
-                kwargs=dict(
-                    experiment_id=exp_id,
-                    rows=d["rows"],
-                    headers=d["headers"],
-                    target_col_index=target_idx,
-                    feature_types=feature_types,
-                    rounds=rounds,
-                    local_epochs=local_epochs,
-                    lr=lr,
-                    num_clients=num_clients,
-                ),
-            )
-            logger.info("Submitted federated training task %s  exp=%s", task.id, exp_id)
-            return jsonify({
-                "jobId":        task.id,
-                "experimentId": exp_id,
-                "status":       "PENDING",
-                "message":      "Training job submitted. Poll GET /api/jobs/<jobId> for status.",
-            }), 202
+            try:
+                from tasks.training_tasks import run_federated_training
+                task = run_federated_training.apply_async(
+                    kwargs=dict(
+                        experiment_id=exp_id,
+                        rows=d["rows"],
+                        headers=d["headers"],
+                        target_col_index=target_idx,
+                        feature_types=feature_types,
+                        rounds=rounds,
+                        local_epochs=local_epochs,
+                        lr=lr,
+                        num_clients=num_clients,
+                    ),
+                )
+                logger.info("Submitted federated training task %s  exp=%s", task.id, exp_id)
+                return jsonify({
+                    "jobId":        task.id,
+                    "experimentId": exp_id,
+                    "status":       "PENDING",
+                    "message":      "Training job submitted. Poll GET /api/jobs/<jobId> for status.",
+                }), 202
+            except Exception as async_exc:
+                logger.error(f"Async submission failed: {async_exc}. Falling back to sync.")
 
         # Sync fallback
         logger.info("Async disabled — running federated training synchronously")
@@ -573,41 +581,44 @@ def api_train_dp_federated():
 
         # ── Async path ────────────────────────────────────────────────────
         if _ASYNC_ENABLED:
-            from tasks.training_tasks import run_dp_federated_training
-            task = run_dp_federated_training.apply_async(
-                kwargs=dict(
-                    experiment_id=exp_id,
-                    rows=d["rows"],
-                    headers=d["headers"],
-                    target_col_index=target_idx,
-                    feature_types=feature_types,
-                    rounds=rounds,
-                    local_epochs=local_epochs,
-                    lr=lr,
-                    num_clients=num_clients,
-                    target_epsilon=target_epsilon,
-                    delta=delta,
-                    clip_threshold=clip_threshold,
-                    noise_multiplier=noise_multiplier,
-                ),
-            )
-            logger.info(
-                "Submitted DP-federated task %s  exp=%s  ε_target=%.2f",
-                task.id, exp_id, target_epsilon,
-            )
-            return jsonify({
-                "jobId":          task.id,
-                "experimentId":   exp_id,
-                "status":         "PENDING",
-                "dpEnabled":      True,
-                "targetEpsilon":  target_epsilon,
-                "delta":          delta,
-                "message": (
-                    "DP training job submitted. "
-                    "Poll GET /api/jobs/<jobId> for status. "
-                    "GET /api/privacy/budget/<experimentId> for live ε accounting."
-                ),
-            }), 202
+            try:
+                from tasks.training_tasks import run_dp_federated_training
+                task = run_dp_federated_training.apply_async(
+                    kwargs=dict(
+                        experiment_id=exp_id,
+                        rows=d["rows"],
+                        headers=d["headers"],
+                        target_col_index=target_idx,
+                        feature_types=feature_types,
+                        rounds=rounds,
+                        local_epochs=local_epochs,
+                        lr=lr,
+                        num_clients=num_clients,
+                        target_epsilon=target_epsilon,
+                        delta=delta,
+                        clip_threshold=clip_threshold,
+                        noise_multiplier=noise_multiplier,
+                    ),
+                )
+                logger.info(
+                    "Submitted DP-federated task %s  exp=%s  ε_target=%.2f",
+                    task.id, exp_id, target_epsilon,
+                )
+                return jsonify({
+                    "jobId":          task.id,
+                    "experimentId":   exp_id,
+                    "status":         "PENDING",
+                    "dpEnabled":      True,
+                    "targetEpsilon":  target_epsilon,
+                    "delta":          delta,
+                    "message": (
+                        "DP training job submitted. "
+                        "Poll GET /api/jobs/<jobId> for status. "
+                        "GET /api/privacy/budget/<experimentId> for live ε accounting."
+                    ),
+                }), 202
+            except Exception as async_exc:
+                logger.error(f"Async DP submission failed: {async_exc}. Falling back to sync.")
 
         # ── Sync fallback ─────────────────────────────────────────────────
         logger.info("Async disabled — running DP-federated training synchronously")
