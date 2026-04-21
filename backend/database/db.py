@@ -38,11 +38,16 @@ DATABASE_URL = os.getenv(
     "postgresql://tm_user:tm_pass@localhost:5432/tm_db",
 )
 
-# SQLite fallback for local dev without Postgres (useful for unit tests)
+# SQLite fallback for local dev or simple cloud demos without Postgres
 _SQLITE_FALLBACK = os.getenv("USE_SQLITE_FALLBACK", "false").lower() == "true"
+
+# Auto-enable SQLite if we are on Render and no DB is provided
+if os.getenv("RENDER") and DATABASE_URL.startswith("postgresql://tm_user:tm_pass@localhost"):
+    _SQLITE_FALLBACK = True
+
 if _SQLITE_FALLBACK:
     DATABASE_URL = "sqlite:///./tm_dev.db"
-    logger.warning("⚠️  Using SQLite fallback — NOT suitable for production!")
+    logger.warning("⚠️  Using SQLite fallback — NOT suitable for production persistence!")
 
 POOL_SIZE    = int(os.getenv("DB_POOL_SIZE", "5"))
 MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))

@@ -68,7 +68,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 init_flask_metrics(app)   # Day 7: Prometheus HTTP instrumentation
 
 # ── Detect async mode ─────────────────────────────────────────────────────
@@ -85,6 +85,13 @@ _PUBLIC_KEY_PEM = _PUBLIC_KEY.public_bytes(
     format=serialization.PublicFormat.SubjectPublicKeyInfo,
 ).decode()
 print("done ✓")
+
+# ── Render /tmp fixes ─────────────────────────────────────────────────────
+if os.getenv("RENDER"):
+    # Render has a read-only filesystem, must use /tmp for MLflow and SQLite
+    if os.getenv("MLFLOW_TRACKING_URI", "./mlruns") == "./mlruns":
+        os.environ["MLFLOW_TRACKING_URI"] = "/tmp/mlruns"
+        logger.info("Setting MLflow tracking URI to /tmp/mlruns for Render")
 
 
 def _rsa_decrypt(ciphertext_b64: str) -> bytes:
