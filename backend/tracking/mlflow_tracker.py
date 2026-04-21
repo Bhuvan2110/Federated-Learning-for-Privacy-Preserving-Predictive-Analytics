@@ -49,7 +49,9 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────
 
-MLFLOW_TRACKING_URI    = os.getenv("MLFLOW_TRACKING_URI",    "./mlruns")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+if not MLFLOW_TRACKING_URI:
+    MLFLOW_TRACKING_URI = "/tmp/mlruns" if os.getenv("RENDER") else "./mlruns"
 MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "training-models")
 MLFLOW_ENABLED         = os.getenv("MLFLOW_ENABLED",         "true").lower() == "true"
 MLFLOW_REGISTER_MODELS = os.getenv("MLFLOW_REGISTER_MODELS", "true").lower() == "true"

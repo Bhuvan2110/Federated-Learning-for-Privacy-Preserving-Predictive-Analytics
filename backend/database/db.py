@@ -46,7 +46,10 @@ if os.getenv("RENDER") and DATABASE_URL.startswith("postgresql://tm_user:tm_pass
     _SQLITE_FALLBACK = True
 
 if _SQLITE_FALLBACK:
-    DATABASE_URL = "sqlite:///./tm_dev.db"
+    if os.getenv("RENDER"):
+        DATABASE_URL = "sqlite:////tmp/tm_dev.db"
+    else:
+        DATABASE_URL = "sqlite:///./tm_dev.db"
     logger.warning("⚠️  Using SQLite fallback — NOT suitable for production persistence!")
 
 POOL_SIZE    = int(os.getenv("DB_POOL_SIZE", "5"))
