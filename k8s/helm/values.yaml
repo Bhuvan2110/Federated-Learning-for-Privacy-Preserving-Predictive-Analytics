@@ -1,0 +1,151 @@
+# k8s/helm/values.yaml
+# ══════════════════════════════════════════════════════════════════════
+#  Default values for the training-models Helm chart.
+#  Override with:  helm install tm ./k8s/helm -f my-values.yaml
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Global ────────────────────────────────────────────────────────────
+global:
+  imageRegistry: ""          # prefix for all images, e.g. "registry.example.com/"
+  imagePullSecrets: []
+  storageClass: ""
+
+image:
+  repository: training-models/backend
+  tag:        "9.0.0"
+  pullPolicy: Always
+
+nameOverride:     ""
+fullnameOverride: ""
+
+namespace: training-models
+
+# ── Backend (Flask) ───────────────────────────────────────────────────
+backend:
+  enabled:  true
+  replicas: 2
+  resources:
+    requests:
+      cpu:    "250m"
+      memory: "512Mi"
+    limits:
+      cpu:    "1000m"
+      memory: "1Gi"
+  autoscaling:
+    enabled:     true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU:   70
+  env:
+    CELERY_ASYNC_ENABLED:  "true"
+    PROMETHEUS_ENABLED:    "true"
+    MLFLOW_ENABLED:        "true"
+    MLFLOW_REGISTER_MODELS: "true"
+
+# ── Celery Worker ─────────────────────────────────────────────────────
+celeryWorker:
+  enabled:     true
+  replicas:    2
+  concurrency: 2
+  resources:
+    requests:
+      cpu:    "500m"
+      memory: "1Gi"
+    limits:
+      cpu:    "2000m"
+      memory: "4Gi"
+  autoscaling:
+    enabled:     true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPU:   80
+
+# ── gRPC Federation Server ────────────────────────────────────────────
+grpcServer:
+  enabled:  true
+  replicas: 1
+  port:     50051
+  resources:
+    requests:
+      cpu:    "250m"
+      memory: "256Mi"
+    limits:
+      cpu:    "500m"
+      memory: "512Mi"
+  service:
+    type: LoadBalancer
+
+# ── Ingress ───────────────────────────────────────────────────────────
+ingress:
+  enabled:          true
+  className:        "nginx"
+  host:             "fl.yourdomain.com"
+  tls:
+    enabled:        true
+    clusterIssuer:  "letsencrypt-prod"
+    secretName:     "tm-tls-cert"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/limit-rps:       "10"
+
+# ── PostgreSQL (Bitnami chart) ────────────────────────────────────────
+postgresql:
+  enabled:  true
+  auth:
+    username: tm_user
+    password: "CHANGE_ME_IN_PROD"
+    database: tm_db
+  primary:
+    persistence:
+      enabled:      true
+      size:         "20Gi"
+    resources:
+      requests:
+        cpu:    "500m"
+        memory: "512Mi"
+
+# ── Redis (Bitnami chart) ─────────────────────────────────────────────
+redis:
+  enabled: true
+  auth:
+    enabled:  false
+  master:
+    persistence:
+      enabled: true
+      size:    "5Gi"
+
+# ── MLflow ────────────────────────────────────────────────────────────
+mlflow:
+  enabled:           true
+  trackingUri:       "http://mlflow-service:5000"
+  artifactRoot:      "/mlflow/artifacts"
+  persistence:
+    enabled:         true
+    size:            "50Gi"
+
+# ── Prometheus ────────────────────────────────────────────────────────
+prometheus:
+  enabled:        true
+  scrapeInterval: "15s"
+  retention:      "30d"
+  persistence:
+    enabled: true
+    size:    "50Gi"
+
+# ── Grafana ───────────────────────────────────────────────────────────
+grafana:
+  enabled:        true
+  adminPassword:  "CHANGE_ME_IN_PROD"
+  persistence:
+    enabled: true
+    size:    "5Gi"
+  dashboards:
+    enabled: true   # auto-provision dashboards from ConfigMap
+
+# ── Secrets (external or generated) ──────────────────────────────────
+secrets:
+  # Set to false and create tm-secrets manually for production
+  create: true
+  databaseUrl:          ""   # auto-generated from postgresql values if empty
+  celeryBrokerUrl:      ""   # auto-generated from redis values if empty
+  celeryResultBackend:  ""

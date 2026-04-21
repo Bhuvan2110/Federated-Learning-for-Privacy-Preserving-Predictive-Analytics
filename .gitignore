@@ -1,0 +1,51 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+firebase-debug.*.log*
+
+# Firebase cache
+.firebase/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+node_modules/
+backend/venv/
+backend/.venv/
+env/
+.env
+
+# Python specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.db
+backend/tm_dev.db
+backend/mlruns/
+.pytest_cache/
+
+# Flutter/Dart specific
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.packages
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Miscellaneous
+tm_e2e_v10_auth_audit.zip

@@ -1,0 +1,227 @@
+# k8s/deployment.yaml
+# ══════════════════════════════════════════════════════════════════════
+#  Kubernetes Deployment — Training Models backend  (Day 7)
+#
+#  Deploys:
+#    backend        — Flask API + Prometheus /metrics
+#    celery-worker  — Celery training worker
+#    grpc-server    — gRPC Federation server
+#
+#  Secrets (create before applying):
+#    kubectl create secret generic tm-secrets \
+#      --from-literal=DATABASE_URL="postgresql://..." \
+#      --from-literal=CELERY_BROKER_URL="redis://..." \
+#      --from-literal=CELERY_RESULT_BACKEND="redis://..."
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Flask Backend ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tm-backend
+  namespace: training-models
+  labels:
+    app: tm-backend
+    component: api
+    version: "9.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tm-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge:        1
+      maxUnavailable:  0
+  template:
+    metadata:
+      labels:
+        app: tm-backend
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8080"
+        prometheus.io/path:   "/metrics"
+    spec:
+      containers:
+        - name: backend
+          image: training-models/backend:9.0.0
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: DATABASE_URL
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: CELERY_BROKER_URL
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: CELERY_RESULT_BACKEND
+            - name: MLFLOW_TRACKING_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: tm-config
+                  key: MLFLOW_TRACKING_URI
+            - name: CELERY_ASYNC_ENABLED
+              value: "true"
+            - name: PROMETHEUS_ENABLED
+              value: "true"
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: "/tmp/prometheus_multiproc"
+          volumeMounts:
+            - name: prometheus-multiproc
+              mountPath: /tmp/prometheus_multiproc
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "512Mi"
+            limits:
+              cpu:    "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds:       10
+            failureThreshold:    3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds:       20
+            failureThreshold:    3
+      volumes:
+        - name: prometheus-multiproc
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+
+---
+# ── Celery Worker ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tm-celery-worker
+  namespace: training-models
+  labels:
+    app: tm-celery-worker
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tm-celery-worker
+  template:
+    metadata:
+      labels:
+        app: tm-celery-worker
+        component: worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: training-models/backend:9.0.0
+          command:
+            - celery
+            - -A
+            - celery_app.celery
+            - worker
+            - --queues=training
+            - --concurrency=2
+            - --loglevel=info
+            - --hostname=worker@%h
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: DATABASE_URL
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: CELERY_BROKER_URL
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: CELERY_RESULT_BACKEND
+            - name: CELERY_TASK_SOFT_TIME_LIMIT
+              value: "600"
+            - name: CELERY_TASK_TIME_LIMIT
+              value: "660"
+            - name: PROMETHEUS_ENABLED
+              value: "true"
+          resources:
+            requests:
+              cpu:    "500m"
+              memory: "1Gi"
+            limits:
+              cpu:    "2000m"
+              memory: "4Gi"
+
+---
+# ── gRPC Federation Server ────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tm-grpc-server
+  namespace: training-models
+  labels:
+    app: tm-grpc-server
+    component: federation
+spec:
+  replicas: 1   # stateful in-memory experiment registry — scale carefully
+  selector:
+    matchLabels:
+      app: tm-grpc-server
+  template:
+    metadata:
+      labels:
+        app: tm-grpc-server
+        component: federation
+    spec:
+      containers:
+        - name: grpc-server
+          image: training-models/backend:9.0.0
+          command: ["python", "grpc_server.py"]
+          ports:
+            - name: grpc
+              containerPort: 50051
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tm-secrets
+                  key: DATABASE_URL
+            - name: GRPC_PORT
+              value: "50051"
+            - name: GRPC_MAX_WORKERS
+              value: "10"
+            - name: GRPC_REFLECTION
+              value: "true"
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "256Mi"
+            limits:
+              cpu:    "500m"
+              memory: "512Mi"
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import grpc; grpc.channel_ready_future(grpc.insecure_channel('localhost:50051')).result(timeout=5)"
+            initialDelaySeconds: 15
+            periodSeconds:       15

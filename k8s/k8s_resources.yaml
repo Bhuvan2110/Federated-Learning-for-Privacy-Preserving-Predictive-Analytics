@@ -1,0 +1,257 @@
+# k8s/service.yaml  ·  k8s/ingress.yaml  ·  k8s/hpa.yaml  ·  k8s/configmap.yaml
+# ══════════════════════════════════════════════════════════════════════════════
+#  All non-Deployment Kubernetes objects for Training Models  (Day 7)
+#  Apply with:   kubectl apply -f k8s/
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Namespace ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: training-models
+  labels:
+    name: training-models
+
+---
+# ── ConfigMap ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tm-config
+  namespace: training-models
+data:
+  MLFLOW_TRACKING_URI:    "http://mlflow-service:5000"
+  MLFLOW_ENABLED:         "true"
+  MLFLOW_REGISTER_MODELS: "true"
+  MLFLOW_EXPERIMENT_NAME: "training-models"
+  PROMETHEUS_ENABLED:     "true"
+  GRPC_PORT:              "50051"
+  GRPC_MAX_WORKERS:       "10"
+  GRPC_REFLECTION:        "true"
+  CELERY_ASYNC_ENABLED:   "true"
+  DB_POOL_SIZE:           "5"
+  DB_MAX_OVERFLOW:        "10"
+  DB_ECHO:                "false"
+
+---
+# ── Services ─────────────────────────────────────────────────────────────────
+# Flask backend — ClusterIP (exposed via Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: tm-backend-service
+  namespace: training-models
+  labels:
+    app: tm-backend
+spec:
+  selector:
+    app: tm-backend
+  ports:
+    - name: http
+      protocol: TCP
+      port:       80
+      targetPort: 8080
+  type: ClusterIP
+
+---
+# gRPC server — LoadBalancer for direct FL client access
+apiVersion: v1
+kind: Service
+metadata:
+  name: tm-grpc-service
+  namespace: training-models
+  labels:
+    app: tm-grpc-server
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"   # NLB for gRPC on AWS
+spec:
+  selector:
+    app: tm-grpc-server
+  ports:
+    - name: grpc
+      protocol: TCP
+      port:       50051
+      targetPort: 50051
+  type: LoadBalancer
+
+---
+# MLflow tracking server — ClusterIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-service
+  namespace: training-models
+spec:
+  selector:
+    app: tm-mlflow
+  ports:
+    - name: http
+      port:       5000
+      targetPort: 5000
+  type: ClusterIP
+
+---
+# Prometheus — ClusterIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: training-models
+spec:
+  selector:
+    app: tm-prometheus
+  ports:
+    - name: http
+      port:       9090
+      targetPort: 9090
+  type: ClusterIP
+
+---
+# Grafana — ClusterIP (exposed via Ingress at /grafana)
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: training-models
+spec:
+  selector:
+    app: tm-grafana
+  ports:
+    - name: http
+      port:       3000
+      targetPort: 3000
+  type: ClusterIP
+
+---
+# ── Ingress ───────────────────────────────────────────────────────────────────
+# Requires nginx ingress controller:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tm-ingress
+  namespace: training-models
+  annotations:
+    kubernetes.io/ingress.class:                  "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect:     "true"
+    nginx.ingress.kubernetes.io/proxy-body-size:  "50m"
+    # Rate limiting — protect training endpoints
+    nginx.ingress.kubernetes.io/limit-rps:        "10"
+    # CORS headers passed through to Flask
+    nginx.ingress.kubernetes.io/enable-cors:      "true"
+    cert-manager.io/cluster-issuer:               "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - fl.yourdomain.com
+      secretName: tm-tls-cert
+  rules:
+    - host: fl.yourdomain.com
+      http:
+        paths:
+          # Flask API
+          - path:     /
+            pathType: Prefix
+            backend:
+              service:
+                name: tm-backend-service
+                port:
+                  number: 80
+          # Grafana dashboard (strip /grafana prefix via rewrite)
+          - path:     /grafana
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana-service
+                port:
+                  number: 3000
+          # MLflow UI
+          - path:     /mlflow
+            pathType: Prefix
+            backend:
+              service:
+                name: mlflow-service
+                port:
+                  number: 5000
+          # Prometheus UI (restrict to internal only in prod)
+          - path:     /prometheus
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-service
+                port:
+                  number: 9090
+
+---
+# ── Horizontal Pod Autoscaler — backend ──────────────────────────────────────
+# Scales backend pods based on CPU.  Training load is CPU-bound.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tm-backend-hpa
+  namespace: training-models
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tm-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               AverageUtilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type:               AverageUtilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type:          Pods
+          value:         2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # cool-down before scale-down
+      policies:
+        - type:          Pods
+          value:         1
+          periodSeconds: 120
+
+---
+# ── HPA — Celery workers ──────────────────────────────────────────────────────
+# Scale workers based on CPU (training is the bottleneck)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tm-celery-worker-hpa
+  namespace: training-models
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tm-celery-worker
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               AverageUtilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type:          Pods
+          value:         4
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600   # long cool-down — don't kill running jobs

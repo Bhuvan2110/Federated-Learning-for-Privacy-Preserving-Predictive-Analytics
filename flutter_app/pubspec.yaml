@@ -1,0 +1,25 @@
+name: training_models
+description: Training Models — FL vs Central Training (E2E Encrypted)
+publish_to: none
+version: 3.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  file_picker: ^6.1.1
+  fl_chart: ^0.66.2
+  permission_handler: ^11.0.1
+  pointycastle: ^3.7.4        # RSA-OAEP + AES-GCM encryption
+  crypto: ^3.0.3              # SHA-256 digest helpers
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

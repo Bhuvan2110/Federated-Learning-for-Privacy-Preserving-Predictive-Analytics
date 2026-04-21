@@ -1,0 +1,37 @@
+# ── Web framework ──────────────────────────────────────────────────────────
+flask==3.0.3
+flask-cors==4.0.1
+
+# ── Encryption ─────────────────────────────────────────────────────────────
+cryptography==42.0.8
+
+# ── Database (Day 1) ───────────────────────────────────────────────────────
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# ── Task queue (Day 2) ─────────────────────────────────────────────────────
+celery==5.3.6
+redis==5.0.3           # Python Redis client (broker + result backend)
+flower==2.0.1          # Celery task monitor web UI
+
+# ── Differential Privacy (Day 3) ───────────────────────────────────────────
+# Pure Python — no extra packages needed.
+# All DP primitives (Gaussian mechanism, Moments Accountant, PrivacyBudget)
+# are implemented from scratch in ml/privacy.py using only the stdlib.
+
+# ── gRPC / Protobuf (Day 5) ────────────────────────────────────────────────
+grpcio==1.64.1            # gRPC runtime
+grpcio-tools==1.64.1      # protoc compiler (only needed at codegen time)
+grpcio-reflection==1.64.1 # server reflection (optional, for grpcurl/BloomRPC)
+protobuf==5.27.2          # protobuf Python runtime
+setuptools<70             # required for pkg_resources (removed in setuptools 70+)
+
+# ── MLflow experiment tracking (Day 6) ─────────────────────────────────────
+mlflow==2.15.1            # experiment tracking + model registry
+
+# ── Prometheus metrics (Day 7) ──────────────────────────────────────────────
+prometheus-client==0.20.0   # metrics exposition + multiprocess support
+
+# ── Authentication / JWT (Day 8) ────────────────────────────────────────────
+PyJWT==2.8.0              # JWT encode/decode (access + refresh tokens)

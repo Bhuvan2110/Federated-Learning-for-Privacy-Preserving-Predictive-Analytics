@@ -1,0 +1,163 @@
+{{/*
+k8s/helm/templates/deployment.yaml
+Helm template for all Training Models deployments.
+*/}}
+
+{{- if .Values.backend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "training-models.fullname" . }}-backend
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "training-models.fullname" . }}-backend
+    version: {{ .Chart.AppVersion | quote }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "training-models.fullname" . }}-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: {{ include "training-models.fullname" . }}-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8080"
+        prometheus.io/path:   "/metrics"
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ include "training-models.fullname" . }}-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: DATABASE_URL
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: CELERY_BROKER_URL
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: CELERY_RESULT_BACKEND
+            {{- range $key, $val := .Values.backend.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+          resources: {{- toYaml .Values.backend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+{{- end }}
+
+{{- if .Values.celeryWorker.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "training-models.fullname" . }}-celery-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "training-models.fullname" . }}-celery-worker
+spec:
+  replicas: {{ .Values.celeryWorker.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "training-models.fullname" . }}-celery-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "training-models.fullname" . }}-celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command:
+            - celery
+            - -A
+            - celery_app.celery
+            - worker
+            - --queues=training
+            - --concurrency={{ .Values.celeryWorker.concurrency }}
+            - --loglevel=info
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: DATABASE_URL
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: CELERY_BROKER_URL
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: CELERY_RESULT_BACKEND
+          resources: {{- toYaml .Values.celeryWorker.resources | nindent 12 }}
+{{- end }}
+
+{{- if .Values.grpcServer.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "training-models.fullname" . }}-grpc-server
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "training-models.fullname" . }}-grpc-server
+spec:
+  replicas: {{ .Values.grpcServer.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "training-models.fullname" . }}-grpc-server
+  template:
+    metadata:
+      labels:
+        app: {{ include "training-models.fullname" . }}-grpc-server
+    spec:
+      containers:
+        - name: grpc-server
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["python", "grpc_server.py"]
+          ports:
+            - containerPort: {{ .Values.grpcServer.port }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "training-models.fullname" . }}-secrets
+                  key: DATABASE_URL
+            - name: GRPC_PORT
+              value: {{ .Values.grpcServer.port | quote }}
+          resources: {{- toYaml .Values.grpcServer.resources | nindent 12 }}
+{{- end }}

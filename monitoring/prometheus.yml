@@ -1,0 +1,94 @@
+# monitoring/prometheus.yml
+# ══════════════════════════════════════════════════════════════════════
+#  Prometheus scrape configuration for Training Models  (Day 7)
+#
+#  Mount this file into the Prometheus container:
+#    volumes:
+#      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+#
+#  All scrape intervals are tuned for an FL workload where rounds
+#  take 10–600 seconds.  Adjust retention/scrape_interval for prod.
+# ══════════════════════════════════════════════════════════════════════
+
+global:
+  scrape_interval:     15s   # default poll cadence
+  evaluation_interval: 15s   # rule evaluation cadence
+  scrape_timeout:      10s
+
+  external_labels:
+    cluster:     "training-models"
+    environment: "production"
+
+# ── Alerting (wire up to AlertManager in Phase 7 full observability) ───
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# ── Rule files (future: load from k8s/alerts/) ────────────────────────
+# rule_files:
+#   - "alerts/*.yml"
+
+# ── Scrape jobs ────────────────────────────────────────────────────────
+scrape_configs:
+
+  # Flask backend — FL metrics, upload counters, HTTP latency
+  - job_name: "training-models-backend"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "backend:8080"
+        labels:
+          service: "backend"
+          component: "flask"
+    metrics_path: /metrics
+
+  # Celery workers — task counters scraped via flower pushgateway pattern
+  # (Flower exposes a Prometheus endpoint at /metrics when using flower-prometheus)
+  - job_name: "training-models-celery"
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - "flower:5555"
+        labels:
+          service: "celery"
+          component: "worker"
+    metrics_path: /metrics
+
+  # gRPC server — round metrics, client counts
+  - job_name: "training-models-grpc"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "grpc_server:8081"   # gRPC metrics HTTP sidecar port
+        labels:
+          service: "grpc-server"
+          component: "federation"
+    metrics_path: /metrics
+
+  # MLflow tracking server
+  - job_name: "mlflow"
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - "mlflow:5000"
+        labels:
+          service: "mlflow"
+          component: "tracking"
+    metrics_path: /metrics
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets:
+          - "localhost:9090"
+
+  # PostgreSQL exporter (optional: deploy postgres_exporter sidecar)
+  # - job_name: "postgres"
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+
+  # Redis exporter (optional)
+  # - job_name: "redis"
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]

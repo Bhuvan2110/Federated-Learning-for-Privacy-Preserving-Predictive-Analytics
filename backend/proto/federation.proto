@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package federation;
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Training Models — Federation gRPC Service  (Day 5)
+//
+//  This service replaces JSON-over-HTTP for client-server FL communication.
+//  Protobuf serialisation is ~10× smaller and faster than JSON for model
+//  updates (float arrays), which is the dominant payload in FL rounds.
+//
+//  Two actors
+//  ──────────
+//    FLServer  — the aggregation server (runs grpc_server.py)
+//    FLClient  — a data-owning node (runs grpc_client.py)
+//
+//  Typical round flow
+//  ──────────────────
+//    1. Client calls JoinFederation(JoinRequest) → JoinResponse
+//       Server assigns client_id, returns experiment config
+//    2. Server calls StartRound (pushed via BroadcastGlobalModel stream,
+//       or client polls GetGlobalModel)
+//    3. Client trains locally, calls SubmitUpdate(ClientUpdate) → Ack
+//    4. When enough clients have submitted, server aggregates
+//    5. Client calls GetGlobalModel(ModelRequest) → GlobalModel
+//    6. Repeat from 3 until rounds exhausted
+//    7. Client calls LeaveFederation(LeaveRequest) → Ack
+//
+//  Streaming endpoint
+//  ──────────────────
+//    StreamRoundUpdates: server-side stream; clients subscribe and receive
+//    live round progress (loss, accuracy, round number) as they are computed.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Shared primitives ─────────────────────────────────────────────────────
+
+message ModelWeights {
+  repeated float weights = 1;   // flattened weight vector
+  float          bias    = 2;
+  int32          version = 3;   // monotonically increasing model version
+}
+
+message Ack {
+  bool   success = 1;
+  string message = 2;
+}
+
+// ── JoinFederation ────────────────────────────────────────────────────────
+
+message JoinRequest {
+  string experiment_id = 1;   // UUID of the experiment to join
+  string client_id     = 2;   // caller-supplied; server may reassign
+  string dataset_info  = 3;   // JSON string: {n_samples, feature_names}
+}
+
+message JoinResponse {
+  bool        accepted       = 1;
+  string      assigned_id    = 2;   // server-assigned client id
+  string      experiment_id  = 3;
+  int32       n_features     = 4;   // expected model width
+  int32       total_rounds   = 5;
+  int32       local_epochs   = 6;
+  float       learning_rate  = 7;
+  string      model_type     = 8;   // "federated"|"dp_federated"|"secagg_federated"
+  string      reject_reason  = 9;   // populated when accepted=false
+}
+
+// ── GetGlobalModel ────────────────────────────────────────────────────────
+
+message ModelRequest {
+  string experiment_id = 1;
+  string client_id     = 2;
+  int32  round         = 3;   // client's current round (server can send newer)
+}
+
+message GlobalModel {
+  string       experiment_id  = 1;
+  int32        round          = 2;
+  ModelWeights weights        = 3;
+  bool         training_done  = 4;   // true when all rounds complete
+  string       status         = 5;   // "waiting"|"ready"|"done"|"aborted"
+}
+
+// ── SubmitUpdate ──────────────────────────────────────────────────────────
+
+message ClientUpdate {
+  string       experiment_id  = 1;
+  string       client_id      = 2;
+  int32        round          = 3;
+  ModelWeights delta          = 4;   // Δw = local_w − global_w
+  int32        n_samples      = 5;   // training samples used this round
+  float        train_loss     = 6;
+  float        train_accuracy = 7;
+  // SecAgg masked update (populated when secagg_enabled=true on experiment)
+  repeated float masked_weights = 8;
+  float          masked_bias    = 9;
+}
+
+// ── LeaveFederation ───────────────────────────────────────────────────────
+
+message LeaveRequest {
+  string experiment_id = 1;
+  string client_id     = 2;
+  string reason        = 3;   // "completed"|"error"|"user_cancelled"
+}
+
+// ── StreamRoundUpdates ────────────────────────────────────────────────────
+
+message StreamRequest {
+  string experiment_id = 1;
+  string client_id     = 2;
+}
+
+message RoundUpdate {
+  string experiment_id   = 1;
+  int32  round           = 2;
+  int32  total_rounds    = 3;
+  float  global_loss     = 4;
+  float  global_accuracy = 5;
+  int32  clients_ready   = 6;   // how many have submitted this round
+  int32  clients_total   = 7;
+  string status          = 8;   // "aggregating"|"broadcasting"|"done"
+}
+
+// ── GetExperimentStatus ───────────────────────────────────────────────────
+
+message StatusRequest {
+  string experiment_id = 1;
+}
+
+message ExperimentStatus {
+  string experiment_id  = 1;
+  string status         = 2;   // mirrors DB ExperimentStatus enum
+  int32  round          = 3;
+  int32  total_rounds   = 4;
+  float  best_accuracy  = 5;
+  float  final_loss     = 6;
+  int32  clients_joined = 7;
+  string error_message  = 8;
+}
+
+// ── Service definition ────────────────────────────────────────────────────
+
+service FederationService {
+  // Client lifecycle
+  rpc JoinFederation    (JoinRequest)    returns (JoinResponse);
+  rpc LeaveFederation   (LeaveRequest)   returns (Ack);
+
+  // Model exchange
+  rpc GetGlobalModel    (ModelRequest)   returns (GlobalModel);
+  rpc SubmitUpdate      (ClientUpdate)   returns (Ack);
+
+  // Live progress stream (server-side streaming)
+  rpc StreamRoundUpdates (StreamRequest) returns (stream RoundUpdate);
+
+  // Status query
+  rpc GetExperimentStatus (StatusRequest) returns (ExperimentStatus);
+}

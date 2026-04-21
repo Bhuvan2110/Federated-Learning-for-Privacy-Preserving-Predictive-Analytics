@@ -1,0 +1,239 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Training Models v5.0 — docker-compose
+#  Day 1: postgres
+#  Day 2: redis + celery_worker + flower  (all active now)
+# ══════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: tm_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-tm_db}
+      POSTGRES_USER:     ${POSTGRES_USER:-tm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tm_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tm_user} -d ${POSTGRES_DB:-tm_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (broker + result backend) ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: tm_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Flask Backend ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tm_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL:          "postgresql://${POSTGRES_USER:-tm_user}:${POSTGRES_PASSWORD:-tm_pass}@postgres:5432/${POSTGRES_DB:-tm_db}"
+      CELERY_BROKER_URL:     "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      CELERY_ASYNC_ENABLED:  "true"
+      DB_POOL_SIZE:          "5"
+      DB_MAX_OVERFLOW:       "10"
+      DB_ECHO:               "false"
+      FLASK_ENV:             production
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tm_celery_worker
+    restart: unless-stopped
+    # Run worker consuming the "training" queue; concurrency=2 (2 parallel jobs)
+    command: celery -A celery_app.celery worker --queues=training --concurrency=2 --loglevel=info --hostname=worker@%h
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL:                 "postgresql://${POSTGRES_USER:-tm_user}:${POSTGRES_PASSWORD:-tm_pass}@postgres:5432/${POSTGRES_DB:-tm_db}"
+      CELERY_BROKER_URL:            "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND:        "redis://redis:6379/1"
+      CELERY_TASK_SOFT_TIME_LIMIT:  "600"
+      CELERY_TASK_TIME_LIMIT:       "660"
+      DB_POOL_SIZE:                 "2"
+      DB_MAX_OVERFLOW:              "4"
+    volumes:
+      - ./backend:/app
+
+  # ── Flower — Celery task monitor ──────────────────────────────────────────
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tm_flower
+    restart: unless-stopped
+    command: celery -A celery_app.celery flower --port=5555 --broker=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery_worker
+    environment:
+      CELERY_BROKER_URL:     "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+    ports:
+      - "5555:5555"
+
+  # ── gRPC Federation Server (Day 5) ───────────────────────────────────────
+  grpc_server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tm_grpc_server
+    restart: unless-stopped
+    command: python grpc_server.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL:          "postgresql://${POSTGRES_USER:-tm_user}:${POSTGRES_PASSWORD:-tm_pass}@postgres:5432/${POSTGRES_DB:-tm_db}"
+      CELERY_BROKER_URL:     "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      GRPC_PORT:             "50051"
+      GRPC_MAX_WORKERS:      "10"
+      GRPC_REFLECTION:       "true"
+      DB_POOL_SIZE:          "3"
+      DB_MAX_OVERFLOW:       "6"
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import grpc; grpc.channel_ready_future(grpc.insecure_channel('localhost:50051')).result(timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── MLflow Tracking Server (Day 6) ───────────────────────────────────────
+  mlflow:
+    image: python:3.12-slim
+    container_name: tm_mlflow
+    restart: unless-stopped
+    # Install mlflow then launch the tracking server backed by Postgres + MinIO-style local store
+    command: >
+      bash -c "pip install mlflow==2.14.1 psycopg2-binary --quiet &&
+               mlflow server
+                 --backend-store-uri postgresql://${POSTGRES_USER:-tm_user}:${POSTGRES_PASSWORD:-tm_pass}@postgres:5432/${MLFLOW_DB:-mlflow_db}
+                 --default-artifact-root /mlflow/artifacts
+                 --host 0.0.0.0
+                 --port 5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Prometheus (Day 7) ────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: tm_prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"          # hot-reload via POST /-/reload
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Grafana (Day 7) ───────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: tm_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL:         "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Auto-provision Prometheus datasource
+      GF_DATASOURCES_DEFAULT_URL: "http://prometheus:9090"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  mlflow_artifacts:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

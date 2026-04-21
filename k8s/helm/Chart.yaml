@@ -1,0 +1,28 @@
+apiVersion: v2
+name: training-models
+description: >
+  Training Models — Federated Learning platform with DP, SecAgg, gRPC,
+  MLflow tracking and Prometheus monitoring.
+type: application
+version: 9.0.0
+appVersion: "9.0.0"
+keywords:
+  - federated-learning
+  - differential-privacy
+  - secure-aggregation
+  - machine-learning
+home: https://github.com/your-org/training-models
+sources:
+  - https://github.com/your-org/training-models
+maintainers:
+  - name: Training Models Team
+    email: ml-platform@your-org.com
+dependencies:
+  - name: postgresql
+    version: "~14.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+  - name: redis
+    version: "~18.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
