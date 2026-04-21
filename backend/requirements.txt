@@ -35,3 +35,4 @@ prometheus-client==0.20.0   # metrics exposition + multiprocess support
 
 # ── Authentication / JWT (Day 8) ────────────────────────────────────────────
 PyJWT==2.8.0              # JWT encode/decode (access + refresh tokens)
+gunicorn==22.0.0
