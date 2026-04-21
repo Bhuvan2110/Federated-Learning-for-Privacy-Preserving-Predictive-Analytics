@@ -72,9 +72,19 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 init_flask_metrics(app)   # Day 7: Prometheus HTTP instrumentation
 
 # ── Detect async mode ─────────────────────────────────────────────────────
-# If Redis is unavailable (local dev without Docker), fall back to
+# If Redis is unavailable (local dev or free Render), fall back to
 # synchronous in-process training so the app still works.
 _ASYNC_ENABLED = os.getenv("CELERY_ASYNC_ENABLED", "true").lower() == "true"
+
+if _ASYNC_ENABLED:
+    try:
+        # Check if the broker is reachable
+        with celery.connection_for_write().establish_connection() as conn:
+            conn.ensure_connection(timeout=1.0)
+        logger.info("✅ Celery broker connected — async mode active.")
+    except Exception as e:
+        logger.warning(f"⚠️  Celery broker unreachable ({e}) — falling back to synchronous mode.")
+        _ASYNC_ENABLED = False
 
 # ── RSA KEY PAIR ──────────────────────────────────────────────────────────
 print("\n🔐  Generating RSA-2048 key pair …", end=" ", flush=True)
