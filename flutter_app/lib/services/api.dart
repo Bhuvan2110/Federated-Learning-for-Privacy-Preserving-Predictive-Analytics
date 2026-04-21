@@ -14,7 +14,7 @@ import 'encryption_service.dart';
 import 'package:flutter/foundation.dart';
 
 class Api {
-  static String _base = kIsWeb ? 'http://localhost:8080/api' : 'http://10.0.2.2:8080/api';
+  static String _base = kIsWeb ? 'https://federated-learning-backend.onrender.com/api' : 'https://federated-learning-backend.onrender.com/api';
   static String get base => _base;
   static String? _token;
 
