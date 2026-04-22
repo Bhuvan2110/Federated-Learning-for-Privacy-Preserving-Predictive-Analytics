@@ -5,6 +5,13 @@
 
 ---
 
+## 🌐 Live Deployment
+
+- **Backend (Render):** [https://federated-learning-backend.onrender.com](https://federated-learning-backend.onrender.com)
+- **Frontend (Firebase):** [https://federated-learning-analy-a5544.web.app](https://federated-learning-analy-a5544.web.app)
+
+---
+
 ## 🔐 Encryption Protocol
 
 ```
