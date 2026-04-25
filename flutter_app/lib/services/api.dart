@@ -176,7 +176,7 @@ class Api {
             'rows': rows, 'headers': headers,
             'targetColIndex': targetIdx, 'featureTypes': ftypes,
             'rounds': rounds, 'localEpochs': localEpochs,
-            'lr': lr, 'numClients': num_clients,
+            'lr': lr, 'numClients': numClients,
             'algo': algo.name,
           }),
         )

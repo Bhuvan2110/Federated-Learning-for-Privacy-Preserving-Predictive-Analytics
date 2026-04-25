@@ -7,6 +7,7 @@ import 'screens/upload.dart';
 import 'screens/configure.dart';
 import 'screens/train.dart';
 import 'screens/prediction.dart';
+import 'screens/login.dart';
 import 'services/auth_service.dart';
 
 void main() {
