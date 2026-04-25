@@ -6,7 +6,7 @@ import 'screens/results.dart';
 import 'screens/upload.dart';
 import 'screens/configure.dart';
 import 'screens/train.dart';
-import 'screens/login.dart';
+import 'screens/prediction.dart';
 import 'services/auth_service.dart';
 
 void main() {
@@ -43,6 +43,7 @@ class Nav extends StatefulWidget {
 }
 
 class _NavState extends State<Nav> {
+  int _navIdx = 0; // 0: Training, 1: Prediction
   _Step _step = _Step.upload;
   CsvData? _csv;
   TrainConfig? _cfg;
@@ -53,11 +54,12 @@ class _NavState extends State<Nav> {
   });
 
   @override Widget build(BuildContext ctx) => Scaffold(
-    appBar: _step != _Step.upload ? AppBar(
+    appBar: _navIdx == 1 ? null : (_step != _Step.upload ? AppBar(
       leading: IconButton(icon:const Icon(Icons.arrow_back_ios,size:17),
         onPressed:() => setState((){
-          if(_step==_Step.config) _step=_Step.upload;
-          else if(_step==_Step.train) _step=_Step.config;
+          if(_step==_Step.config) {
+            _step=_Step.upload;
+          } else if(_step==_Step.train) _step=_Step.config;
           else if(_step==_Step.results) _step=_Step.train;
         })),
       title: _StepBar(step: _step.index),
@@ -65,8 +67,19 @@ class _NavState extends State<Nav> {
         IconButton(icon:const Icon(Icons.logout,size:20),onPressed:() => AuthService.instance.logout()),
         IconButton(icon:const Icon(Icons.refresh,size:20),onPressed:_reset)
       ],
-    ) : null,
-    body: _body(),
+    ) : null),
+    body: _navIdx == 1 ? const PredictionScreen() : _body(),
+    bottomNavigationBar: BottomNavigationBar(
+      currentIndex: _navIdx,
+      onTap: (i) => setState(() => _navIdx = i),
+      backgroundColor: T.bg,
+      selectedItemColor: T.acc,
+      unselectedItemColor: T.muted,
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.model_training), label: 'Training'),
+        BottomNavigationBarItem(icon: Icon(Icons.online_prediction), label: 'Prediction'),
+      ],
+    ),
   );
 
   Widget _body() {

@@ -14,6 +14,7 @@ class _State extends State<ConfigScreen> {
   late Map<String,String> _ft;
   late TextEditingController _tgt,_ep,_lr,_rounds,_le,_nc;
   String? _err;
+  Algorithm _algo = Algorithm.logistic;
 
   static const _opts=[
     {'k':'numeric','icon':'🔢','desc':'Continuous float'},
@@ -34,12 +35,16 @@ class _State extends State<ConfigScreen> {
       _ft[s.col]=s.type=='numeric'?'numeric':s.uniqueCount!=null&&s.uniqueCount!<=2?'binary':'text';
     }
   }
-  @override void dispose(){ for(final c in [_tgt,_ep,_lr,_rounds,_le,_nc])c.dispose(); super.dispose(); }
+  @override void dispose(){ for(final c in [_tgt,_ep,_lr,_rounds,_le,_nc]) {
+    c.dispose();
+  } super.dispose(); }
 
   void _onTgt(String v){
     final n=int.tryParse(v);
     if(n!=null&&n>=1&&n<=widget.csv.headers.length){setState((){_idx=n-1;_err=null;});}
-    else setState(()=>_err='Must be 1–${widget.csv.headers.length}');
+    else {
+      setState(()=>_err='Must be 1–${widget.csv.headers.length}');
+    }
   }
 
   void _go(){
@@ -50,7 +55,8 @@ class _State extends State<ConfigScreen> {
       lr:(double.tryParse(_lr.text)??0.1).clamp(0.0001,10.0),
       rounds:(int.tryParse(_rounds.text)??25).clamp(1,1000),
       localEpochs:(int.tryParse(_le.text)??5).clamp(1,100),
-      numClients:(int.tryParse(_nc.text)??5).clamp(2,20)));
+      numClients:(int.tryParse(_nc.text)??5).clamp(2,20),
+      algo: _algo));
   }
 
   @override Widget build(BuildContext ctx){
@@ -118,6 +124,34 @@ class _State extends State<ConfigScreen> {
         }).toList()),
 
         const SizedBox(height:28),
+
+        // Algorithm
+        const Text('ALGORITHM',style:TextStyle(fontSize:10,color:T.muted,
+          fontFamily:'monospace',letterSpacing:1.5)),
+        const SizedBox(height:12),
+        Row(children: Algorithm.values.map((a){
+          final sel = _algo == a;
+          return Expanded(child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: GestureDetector(
+              onTap: () => setState(() => _algo = a),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: sel ? T.acc.withOpacity(0.1) : T.card,
+                  border: Border.all(color: sel ? T.acc : T.border),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(children: [
+                  Text(a == Algorithm.logistic ? '📈' : a == Algorithm.linear ? '📉' : '🌲', style: const TextStyle(fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Text(a.name.toUpperCase(), style: TextStyle(fontSize: 8, fontWeight: sel ? FontWeight.w900 : FontWeight.normal, color: sel ? T.acc : T.muted)),
+                ]),
+              ),
+            ),
+          ));
+        }).toList()),
+        const SizedBox(height: 28),
 
         // Feature types
         const Text('FEATURE TYPES',style:TextStyle(fontSize:10,color:T.muted,

@@ -34,13 +34,17 @@ class CsvData {
     isEncrypted: j['encrypted'] == true);
 }
 
+enum Algorithm { logistic, linear, decisionTree }
+
 class TrainConfig {
   int targetIdx;
   Map<String,String> ftypes;
   int epochs; double lr;
   int rounds, localEpochs, numClients;
+  Algorithm algo;
   TrainConfig({required this.targetIdx, required this.ftypes,
-    this.epochs=100, this.lr=0.1, this.rounds=25, this.localEpochs=5, this.numClients=5});
+    this.epochs=100, this.lr=0.1, this.rounds=25, this.localEpochs=5, 
+    this.numClients=5, this.algo = Algorithm.logistic});
 }
 
 class ConfMatrix {
@@ -107,4 +111,35 @@ class User {
   final String id, email, role;
   final Map<String,dynamic> attrs;
   const User({required this.id, required this.email, required this.role, required this.attrs});
+}
+
+class Experiment {
+  final String id, name, type, status;
+  final String? targetCol;
+  final List<String>? featureCols;
+  final DateTime createdAt;
+  final Map<String, dynamic>? result;
+
+  const Experiment({
+    required this.id, required this.name, required this.type, required this.status,
+    this.targetCol, this.featureCols, required this.createdAt, this.result,
+  });
+
+  factory Experiment.fromJson(Map<String, dynamic> j) => Experiment(
+    id: j['id'], name: j['name'], type: j['model_type'], status: j['status'],
+    targetCol: j['target_col'],
+    featureCols: j['feature_cols'] != null ? List<String>.from(j['feature_cols']) : null,
+    createdAt: DateTime.parse(j['created_at']),
+    result: j['result'],
+  );
+}
+
+class PredictionResult {
+  final double prediction;
+  final String? label;
+  const PredictionResult({required this.prediction, this.label});
+  factory PredictionResult.fromJson(Map<String, dynamic> j) => PredictionResult(
+    prediction: (j['prediction'] as num).toDouble(),
+    label: j['label']?.toString(),
+  );
 }

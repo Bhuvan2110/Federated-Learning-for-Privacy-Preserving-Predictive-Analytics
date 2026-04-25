@@ -23,7 +23,7 @@ class _State extends State<TrainScreen> {
     try{
       final r=await Api.central(rows:widget.csv.rows,headers:widget.csv.headers,
         targetIdx:widget.cfg.targetIdx,ftypes:widget.cfg.ftypes,
-        epochs:widget.cfg.epochs,lr:widget.cfg.lr);
+        epochs:widget.cfg.epochs,lr:widget.cfg.lr,algo:widget.cfg.algo);
       setState(()=>_c=r);
     }catch(e){setState(()=>_ce=e.toString().replaceFirst('Exception: ',''));}
     finally{if(mounted)setState(()=>_cl=false);}
@@ -35,7 +35,7 @@ class _State extends State<TrainScreen> {
       final r=await Api.federated(rows:widget.csv.rows,headers:widget.csv.headers,
         targetIdx:widget.cfg.targetIdx,ftypes:widget.cfg.ftypes,
         rounds:widget.cfg.rounds,localEpochs:widget.cfg.localEpochs,
-        lr:widget.cfg.lr,numClients:widget.cfg.numClients);
+        lr:widget.cfg.lr,numClients:widget.cfg.numClients,algo:widget.cfg.algo);
       setState(()=>_f=r);
     }catch(e){setState(()=>_fe=e.toString().replaceFirst('Exception: ',''));}
     finally{if(mounted)setState(()=>_fl=false);}

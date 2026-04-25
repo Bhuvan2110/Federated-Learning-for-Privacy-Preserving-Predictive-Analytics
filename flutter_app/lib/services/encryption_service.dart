@@ -9,6 +9,7 @@
 ///   5. POST { encryptedKey, iv, encryptedData, filename } to
 ///      /api/upload/encrypted  (all values base64-encoded)
 /// ═══════════════════════════════════════════════════════════════
+library;
 
 import 'dart:convert';
 import 'dart:math';

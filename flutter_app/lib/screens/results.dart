@@ -34,7 +34,8 @@ class _State extends State<ResultsScreen> with SingleTickerProviderStateMixin {
   }
 
   @override Widget build(BuildContext ctx){
-    if(widget.central==null&&widget.fl==null) return Scaffold(
+    if(widget.central==null&&widget.fl==null) {
+      return Scaffold(
       appBar:AppBar(title:const Text('Results')),
       body:Center(child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[
         const Text('🔬',style:TextStyle(fontSize:48)),
@@ -43,6 +44,7 @@ class _State extends State<ResultsScreen> with SingleTickerProviderStateMixin {
         const SizedBox(height:16),
         ElevatedButton(onPressed:widget.onTrainMore,child:const Text('Go to Train')),
       ])));
+    }
     final tabs=_tabs;
     return Scaffold(
       appBar:AppBar(title:const Text('Results & Comparison'),
@@ -148,8 +150,8 @@ class _State extends State<ResultsScreen> with SingleTickerProviderStateMixin {
       ]),
       const SizedBox(height:16),
       // column headers
-      Row(children:[
-        const SizedBox(width:96),
+      const Row(children:[
+        SizedBox(width:96),
         Expanded(child:Center(child:Text('🏛 CENTRAL',
           style:TextStyle(fontSize:9,fontWeight:FontWeight.w800,
             color:T.ct,fontFamily:'monospace')))),
@@ -211,11 +213,11 @@ class _State extends State<ResultsScreen> with SingleTickerProviderStateMixin {
           color:T.muted,height:1.75),children:[
           const TextSpan(text:'Summary: ',
             style:TextStyle(color:T.txt,fontWeight:FontWeight.w700)),
-          TextSpan(text:'Central → ',
-            style:const TextStyle(color:T.ct,fontWeight:FontWeight.w700)),
+          const TextSpan(text:'Central → ',
+            style:TextStyle(color:T.ct,fontWeight:FontWeight.w700)),
           TextSpan(text:'${_pct(c.accuracy)} acc in ${_msf(widget.central!.trainingTimeMs)}.  '),
-          TextSpan(text:'Federated → ',
-            style:const TextStyle(color:T.fl,fontWeight:FontWeight.w700)),
+          const TextSpan(text:'Federated → ',
+            style:TextStyle(color:T.fl,fontWeight:FontWeight.w700)),
           TextSpan(text:'${_pct(f.accuracy)} acc in ${_msf(widget.fl!.trainingTimeMs)}.  '),
           TextSpan(text:flWins
             ?'🌐 Federated matched competitive accuracy with decentralised data.'

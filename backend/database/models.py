@@ -338,6 +338,10 @@ class ExperimentResult(Base):
     dp_noise_sigma      = Column(Float, nullable=True)   # σ actually used
     dp_budget_summary   = Column(JSON,  nullable=True)   # full PrivacyBudget.to_dict()
 
+    # ── Model persistence (Prediction Module) ──────────────────────────────
+    # Stores { weights, bias, means, stds, label_map, tree_data?, algorithm? }
+    model_params        = Column(JSON,    nullable=True)
+
     # ── Secure Aggregation audit log (Day 4) ───────────────────────────────
     # Populated only when secagg_enabled=True on the parent Experiment.
     secagg_summary      = Column(JSON,    nullable=True)  # full SecAgg summary dict
@@ -373,6 +377,8 @@ class ExperimentResult(Base):
             "dp_epsilon_history": self.dp_epsilon_history,
             "dp_noise_sigma":     self.dp_noise_sigma,
             "dp_budget_summary":  self.dp_budget_summary,
+            # Model persistence
+            "model_params":       self.model_params,
             # SecAgg audit
             "secagg_summary":      self.secagg_summary,
             "secagg_all_verified": self.secagg_all_verified,

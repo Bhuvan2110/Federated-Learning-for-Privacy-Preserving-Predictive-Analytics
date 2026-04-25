@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/models.dart';
@@ -20,7 +19,7 @@ class _State extends State<UploadScreen> {
   bool _encLoading = false;     // animating key fetch
   String? _err;
   final _urlCtrl = TextEditingController(
-    text: kIsWeb ? 'https://federated-learning-backend.onrender.com' : 'http://10.0.2.2:8080'
+    text: kIsWeb ? 'http://localhost:8080' : 'http://10.0.2.2:8080'
   );
 
   @override void initState() { super.initState(); _connect(); }

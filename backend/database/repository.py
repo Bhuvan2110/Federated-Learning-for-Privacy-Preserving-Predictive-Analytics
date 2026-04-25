@@ -267,6 +267,8 @@ class ExperimentRepo:
             dp_epsilon_history = privacy.get("epsilon_history"),
             dp_noise_sigma     = privacy.get("noise_sigma"),
             dp_budget_summary  = privacy if privacy else None,
+            # Model persistence (Prediction Module)
+            model_params        = result_payload.get("model_params"),
             # SecAgg audit (Day 4) — None for non-SecAgg runs
             secagg_summary      = result_payload.get("secagg"),
             secagg_all_verified = (result_payload["secagg"].get("all_rounds_verified")

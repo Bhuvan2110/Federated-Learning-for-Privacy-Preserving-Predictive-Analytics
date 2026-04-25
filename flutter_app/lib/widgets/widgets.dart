@@ -74,13 +74,13 @@ class ConfMatrixWidget extends StatelessWidget {
   @override Widget build(BuildContext ctx) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('CONFUSION MATRIX', style: const TextStyle(
+      const Text('CONFUSION MATRIX', style: TextStyle(
         fontSize:9, color:T.muted, fontFamily:'monospace', letterSpacing:1.5)),
       const SizedBox(height:8),
-      Row(children: [
-        const SizedBox(width:60),
-        Expanded(child:Center(child:Text('Pred +', style:const TextStyle(fontSize:9,color:T.muted)))),
-        Expanded(child:Center(child:Text('Pred −', style:const TextStyle(fontSize:9,color:T.muted)))),
+      const Row(children: [
+        SizedBox(width:60),
+        Expanded(child:Center(child:Text('Pred +', style:TextStyle(fontSize:9,color:T.muted)))),
+        Expanded(child:Center(child:Text('Pred −', style:TextStyle(fontSize:9,color:T.muted)))),
       ]),
       const SizedBox(height:4),
       _row('Act +', [_Cell('TP',m.tp,true), _Cell('FN',m.fn,false)]),

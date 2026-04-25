@@ -77,15 +77,16 @@ def run_central_training(
     feature_types: dict,
     epochs: int,
     lr: float,
+    algo: str = "logistic",
 ) -> dict:
     """
-    Async Celery task: run central (non-federated) logistic regression.
+    Async Celery task: run central (non-federated) training.
 
     Returns a dict with training results that Celery stores in Redis.
     The Flask poll endpoint reads this dict to return to the client.
     """
-    logger.info("[%s] Starting central training  exp=%s  epochs=%d  lr=%.4f",
-                self.request.id, experiment_id, epochs, lr)
+    logger.info("[%s] Starting central training  exp=%s  algo=%s  epochs=%d  lr=%.4f",
+                self.request.id, experiment_id, algo, epochs, lr)
 
     # Guard: only run if still pending/running (prevents double-run on re-queue)
     with get_db() as db:
@@ -97,7 +98,7 @@ def run_central_training(
         ExperimentRepo.mark_running(db, experiment_id)
 
     try:
-        result = central_train(rows, headers, target_col_index, feature_types, epochs, lr)
+        result = central_train(rows, headers, target_col_index, feature_types, epochs, lr, algo=algo)
     except SoftTimeLimitExceeded:
         err = f"Training exceeded soft time limit ({self.app.conf.task_soft_time_limit}s)"
         logger.error("[%s] %s", self.request.id, err)
@@ -144,14 +145,15 @@ def run_federated_training(
     local_epochs: int,
     lr: float,
     num_clients: int,
+    algo: str = "logistic",
 ) -> dict:
     """
     Async Celery task: run federated averaging (FedAvg).
 
     Same lifecycle as run_central_training — see that docstring.
     """
-    logger.info("[%s] Starting federated training  exp=%s  rounds=%d  clients=%d",
-                self.request.id, experiment_id, rounds, num_clients)
+    logger.info("[%s] Starting federated training  exp=%s  algo=%s  rounds=%d  clients=%d",
+                self.request.id, experiment_id, algo, rounds, num_clients)
 
     with get_db() as db:
         exp = ExperimentRepo.get_by_id(db, experiment_id)
@@ -164,7 +166,7 @@ def run_federated_training(
     try:
         result = federated_train(
             rows, headers, target_col_index, feature_types,
-            rounds, local_epochs, lr, num_clients,
+            rounds, local_epochs, lr, num_clients, algo=algo,
         )
     except SoftTimeLimitExceeded:
         err = f"Training exceeded soft time limit ({self.app.conf.task_soft_time_limit}s)"

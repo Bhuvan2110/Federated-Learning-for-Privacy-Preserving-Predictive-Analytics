@@ -5,6 +5,7 @@
 ///   2. upload(file)      →  encrypt → POST /api/upload/encrypted
 ///   3. Fallback          →  plain POST /api/upload  if key missing
 /// ═══════════════════════════════════════════════════════════════
+library;
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -33,11 +34,14 @@ class Api {
   // ── Health check ─────────────────────────────────────────────
   static Future<bool> ping() async {
     try {
+      debugPrint('Attempting to ping: $_base/health');
       final r = await http
           .get(Uri.parse('$_base/health'), headers: _headers)
           .timeout(const Duration(seconds: 5));
+      debugPrint('Ping response: ${r.statusCode}');
       return r.statusCode == 200;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Ping failed: $e');
       return false;
     }
   }
@@ -133,6 +137,7 @@ class Api {
     required Map<String, String> ftypes,
     int epochs = 100,
     double lr = 0.1,
+    Algorithm algo = Algorithm.logistic,
   }) async {
     final r = await http
         .post(
@@ -142,6 +147,7 @@ class Api {
             'rows': rows, 'headers': headers,
             'targetColIndex': targetIdx, 'featureTypes': ftypes,
             'epochs': epochs, 'lr': lr,
+            'algo': algo.name,
           }),
         )
         .timeout(const Duration(seconds: 180));
@@ -160,6 +166,7 @@ class Api {
     int localEpochs = 5,
     double lr = 0.1,
     int numClients = 5,
+    Algorithm algo = Algorithm.logistic,
   }) async {
     final r = await http
         .post(
@@ -169,7 +176,8 @@ class Api {
             'rows': rows, 'headers': headers,
             'targetColIndex': targetIdx, 'featureTypes': ftypes,
             'rounds': rounds, 'localEpochs': localEpochs,
-            'lr': lr, 'numClients': numClients,
+            'lr': lr, 'numClients': num_clients,
+            'algo': algo.name,
           }),
         )
         .timeout(const Duration(seconds: 180));
@@ -186,5 +194,28 @@ class Api {
     final j = jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode != 200) throw Exception(j['error'] ?? 'Polling failed');
     return j;
+  }
+
+  // ── Experiments ──────────────────────────────────────────────
+  static Future<List<Experiment>> getExperiments() async {
+    final r = await http
+        .get(Uri.parse('$_base/experiments?limit=50'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    final j = jsonDecode(r.body) as List;
+    return j.map((e) => Experiment.fromJson(e)).toList();
+  }
+
+  // ── Predict ──────────────────────────────────────────────────
+  static Future<PredictionResult> predict(String expId, Map<String, dynamic> inputs) async {
+    final r = await http
+        .post(
+          Uri.parse('$_base/predict'),
+          headers: _headers,
+          body: jsonEncode({'experimentId': expId, 'inputs': inputs}),
+        )
+        .timeout(const Duration(seconds: 15));
+    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'Prediction failed');
+    return PredictionResult.fromJson(j);
   }
 }

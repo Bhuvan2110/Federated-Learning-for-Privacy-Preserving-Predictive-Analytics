@@ -44,7 +44,7 @@ from database import (
     ModelType,
     FileRepo, ExperimentRepo, UserRepo,
 )
-from ml.engine import central_train, federated_train
+from ml.engine import central_train, federated_train, predict_one_from_params
 from ml.dp_engine import dp_federated_train
 from ml.secagg_engine import secagg_federated_train
 from tracking import mlflow_health, MLFLOW_TRACKING_URI, MLFLOW_ENABLED
@@ -319,6 +319,7 @@ def api_train_central():
         feature_types = d.get("featureTypes", {})
         epochs        = int(d.get("epochs", 100))
         lr            = float(d.get("lr", 0.1))
+        algo          = d.get("algo", "logistic")
         file_id       = d.get("fileId")
 
         # Create experiment record
@@ -328,10 +329,10 @@ def api_train_central():
                 exp = ExperimentRepo.create(
                     db,
                     model_type=ModelType.CENTRAL,
-                    hyperparameters={"epochs": epochs, "lr": lr},
+                    hyperparameters={"epochs": epochs, "lr": lr, "algo": algo},
                     target_col_index=target_idx,
                     feature_types=feature_types,
-                    name=f"Central — {d['headers'][target_idx]}",
+                    name=f"Central — {d['headers'][target_idx]} ({algo})",
                     file_id=file_id,
                 )
                 exp_id = exp.id
@@ -351,6 +352,7 @@ def api_train_central():
                         feature_types=feature_types,
                         epochs=epochs,
                         lr=lr,
+                        algo=algo,
                     ),
                 )
                 logger.info("Submitted central training task %s  exp=%s", task.id, exp_id)
@@ -371,7 +373,7 @@ def api_train_central():
                 ExperimentRepo.mark_running(db, exp_id)
         except Exception: pass
 
-        result = central_train(d["rows"], d["headers"], target_idx, feature_types, epochs, lr)
+        result = central_train(d["rows"], d["headers"], target_idx, feature_types, epochs, lr, algo=algo)
 
         try:
             with get_db() as db:
@@ -399,6 +401,7 @@ def api_train_federated():
         local_epochs  = int(d.get("localEpochs", 5))
         lr            = float(d.get("lr", 0.1))
         num_clients   = int(d.get("numClients", 5))
+        algo          = d.get("algo", "logistic")
         file_id       = d.get("fileId")
 
         exp_id = None
@@ -409,11 +412,11 @@ def api_train_federated():
                     model_type=ModelType.FEDERATED,
                     hyperparameters={
                         "rounds": rounds, "local_epochs": local_epochs,
-                        "lr": lr, "num_clients": num_clients,
+                        "lr": lr, "num_clients": num_clients, "algo": algo,
                     },
                     target_col_index=target_idx,
                     feature_types=feature_types,
-                    name=f"Federated — {d['headers'][target_idx]}",
+                    name=f"Federated — {d['headers'][target_idx]} ({algo})",
                     file_id=file_id,
                 )
                 exp_id = exp.id
@@ -435,6 +438,7 @@ def api_train_federated():
                         local_epochs=local_epochs,
                         lr=lr,
                         num_clients=num_clients,
+                        algo=algo,
                     ),
                 )
                 logger.info("Submitted federated training task %s  exp=%s", task.id, exp_id)
@@ -456,7 +460,7 @@ def api_train_federated():
 
         result = federated_train(
             d["rows"], d["headers"], target_idx, feature_types,
-            rounds, local_epochs, lr, num_clients,
+            rounds, local_epochs, lr, num_clients, algo=algo,
         )
         try:
             with get_db() as db:
@@ -960,6 +964,71 @@ def get_experiment(exp_id: str):
                 return jsonify({"error": "Experiment not found."}), 404
             return jsonify(exp.to_dict(include_result=True))
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Prediction API ────────────────────────────────────────────────────────
+@app.route("/api/predict", methods=["POST"])
+def api_predict():
+    """
+    Perform a prediction using a completed experiment.
+    Body: { "experimentId": "...", "inputs": { "col1": val1, "col2": val2 } }
+    """
+    try:
+        d = request.get_json(force=True) or {}
+        exp_id = d.get("experimentId")
+        inputs = d.get("inputs", {})
+
+        if not exp_id:
+            return jsonify({"error": "experimentId is required"}), 400
+
+        with get_db() as db:
+            exp = ExperimentRepo.get_by_id(db, exp_id)
+            if not exp or exp.status != ExperimentStatus.COMPLETED:
+                return jsonify({"error": "Completed experiment not found"}), 404
+            
+            res = exp.result
+            if not res or not res.model_params:
+                return jsonify({"error": "Model parameters not found for this experiment"}), 404
+            
+            params = res.model_params
+            fcols = exp.feature_cols or []
+            ftypes = exp.feature_types or {}
+            
+            # Prepare input vector
+            x_raw = []
+            for col in fcols:
+                val = inputs.get(col)
+                if val is None:
+                    return jsonify({"error": f"Missing input for column: {col}"}), 400
+                
+                # Use the same encoding logic as in prepare_data
+                t = ftypes.get(col, "numeric")
+                try:
+                    if t == "numeric":
+                        x_raw.append(float(val))
+                    elif t == "binary":
+                        x_raw.append(1.0 if str(val).strip().lower() in ("1", "true", "yes", "y", "1.0") else 0.0)
+                    else: # categorical
+                        x_raw.append(float(hash(str(val)) % 10_000) / 10_000.0)
+                except Exception:
+                    x_raw.append(0.0)
+
+            prediction = predict_one_from_params(params, x_raw)
+            
+            # If classification, maybe return the label too
+            result = {"prediction": prediction}
+            if params.get("task") == "classification":
+                label = "1" if prediction >= 0.5 else "0"
+                lmap = params.get("lmap", {})
+                # Reverse lmap if possible
+                rev_lmap = {str(v): k for k, v in lmap.items()}
+                result["label"] = rev_lmap.get(label, label)
+            
+            return jsonify(result)
+
+    except Exception as e:
+        logger.exception("Prediction failed: %s", e)
         return jsonify({"error": str(e)}), 500
 
 
