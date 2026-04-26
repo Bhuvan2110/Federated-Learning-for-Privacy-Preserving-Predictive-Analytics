@@ -226,7 +226,7 @@ def health():
 
     return jsonify({
         "status":        "ok" if db_status["db"] == "ok" else "degraded",
-        "version":       "10.0.0",
+        "version":       "10.1.0",
         "encryption":    "RSA-2048-OAEP + AES-256-GCM",
         "database":      db_status,
         "celery":        celery_status,
@@ -285,11 +285,29 @@ def upload_encrypted():
 @app.route("/api/upload", methods=["POST"])
 def upload():
     try:
+        # ── Handle JSON-based base64 upload (Reliable fallback for Web) ──
+        if request.is_json:
+            body = request.get_json(force=True) or {}
+            if "data" in body and "filename" in body:
+                try:
+                    csv_bytes = base64.b64decode(body["data"])
+                    fname = body["filename"]
+                    result = _parse_csv_bytes(csv_bytes, fname)
+                    result["fileId"] = _persist_upload(result, fname, False)
+                    result["encrypted"] = False
+                    record_upload(encrypted=False)
+                    return jsonify(result)
+                except Exception as e:
+                    return jsonify({"error": f"Base64 decode failed: {str(e)}"}), 400
+
+        # ── Handle traditional multipart/form-data ─────────────────────
         if "csvFile" not in request.files:
-            return jsonify({"error": "No file uploaded."}), 400
+            return jsonify({"error": "No file uploaded. Please ensure the field name is 'csvFile'."}), 400
+        
         f = request.files["csvFile"]
         if not f.filename.lower().endswith(".csv"):
             return jsonify({"error": "Only .csv files are allowed."}), 400
+        
         result           = _parse_csv_bytes(f.read(), f.filename)
         result["fileId"] = _persist_upload(result, f.filename, False)
         result["encrypted"] = False

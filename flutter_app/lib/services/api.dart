@@ -37,7 +37,7 @@ class Api {
       debugPrint('Attempting to ping: $_base/health');
       final r = await http
           .get(Uri.parse('$_base/health'), headers: _headers)
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 30));
       debugPrint('Ping response: ${r.statusCode}');
       return r.statusCode == 200;
     } catch (e) {
@@ -52,7 +52,7 @@ class Api {
       Uri.parse('$_base/auth/token'),
       headers: {'Content-Type': 'application/json'}, // plain login doesn't need auth header
       body: jsonEncode({'user_id': id, 'email': email, 'role': role}),
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(const Duration(seconds: 30));
     
     final j = jsonDecode(r.body) as Map<String, dynamic>;
     if (r.statusCode != 200) throw Exception(j['error'] ?? 'Login failed');
@@ -69,7 +69,7 @@ class Api {
     try {
       final r = await http
           .get(Uri.parse('$_base/pubkey'), headers: _headers)
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
       if (r.statusCode != 200) return false;
 
       final j = jsonDecode(r.body) as Map<String, dynamic>;
@@ -112,13 +112,15 @@ class Api {
       csv.isEncrypted = true;
       return csv;
     } else {
-      // ── PLAIN PATH (Fallback) ────────────────────────────────
-      var req = http.MultipartRequest('POST', Uri.parse('$_base/upload'));
-      req.headers.addAll(_headers);
-      req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
-      
-      final stream = await req.send().timeout(const Duration(seconds: 60));
-      final r = await http.Response.fromStream(stream);
+      // ── PLAIN PATH (JSON-based for reliability) ─────────────
+      final r = await http.post(
+        Uri.parse('$_base/upload'),
+        headers: _headers,
+        body: jsonEncode({
+          'data': base64Encode(bytes),
+          'filename': filename,
+        }),
+      ).timeout(const Duration(seconds: 60));
       
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       if (r.statusCode != 200) throw Exception(j['error'] ?? 'Upload failed');
